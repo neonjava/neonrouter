@@ -1,0 +1,1 @@
+{"id":"neonrouter","name":"NeonRouter","version":"1.0.0","description":"Redis-based Cross-Server Routing","authors":["NeonJava"],"dependencies":[],"main":"dev.neon.router.NeonRouterPlugin"}
