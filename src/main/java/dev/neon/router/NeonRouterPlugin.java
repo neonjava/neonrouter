@@ -5,38 +5,130 @@ import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.player.PlayerChooseInitialServerEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.plugin.Plugin;
+import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import org.slf4j.Logger;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Optional;
+import java.util.Properties;
 
 @Plugin(id = "neonrouter", name = "NeonRouter", version = "1.0.0", description = "Redis-based Cross-Server Routing", authors = {"NeonJava"})
 public class NeonRouterPlugin {
 
     private final ProxyServer server;
     private final Logger logger;
+    private final Path dataDirectory;
     private JedisPool redisPool;
+    private static final String DEFAULT_REDIS_HOST = "127.0.0.1";
+    private static final int DEFAULT_REDIS_PORT = 6379;
+    private static final String DEFAULT_REDIS_PASSWORD = "";
+    private static final String REDIS_CONFIG_FILE = "config.properties";
 
     @Inject
-    public NeonRouterPlugin(ProxyServer server, Logger logger) {
+    public NeonRouterPlugin(ProxyServer server, Logger logger, @DataDirectory Path dataDirectory) {
         this.server = server;
         this.logger = logger;
+        this.dataDirectory = dataDirectory;
     }
 
     @Subscribe
     public void onProxyInitialization(ProxyInitializeEvent event) {
         try {
-            // Hardcoded Redis config as it is identical on the current node
-            redisPool = new JedisPool("127.0.0.1", 6379);
+            RedisConfig redis = loadRedisConfig();
+            if (redis.password.isBlank()) {
+                redisPool = new JedisPool(redis.host, redis.port);
+            } else {
+                redisPool = new JedisPool("redis://:" + redis.password + "@" + redis.host + ":" + redis.port + "/0");
+            }
             try (Jedis jedis = redisPool.getResource()) {
                 jedis.ping();
             }
-            logger.info("NeonRouter connected to Redis successfully.");
+            logger.info("NeonRouter connected to Redis successfully ({}:{}).", redis.host, redis.port);
         } catch (Exception e) {
             logger.error("Failed to connect to Redis for NeonRouter", e);
+        }
+    }
+
+    private String envOrDefault(String key, String fallback) {
+        String value = System.getenv(key);
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value.trim();
+    }
+
+    private int intEnvOrDefault(String key, int fallback) {
+        String value = System.getenv(key);
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private RedisConfig loadRedisConfig() throws IOException {
+        Files.createDirectories(dataDirectory);
+        Path configPath = dataDirectory.resolve(REDIS_CONFIG_FILE);
+        Properties props = new Properties();
+
+        if (Files.exists(configPath)) {
+            try (InputStream in = Files.newInputStream(configPath)) {
+                props.load(in);
+            }
+        }
+
+        String host = readProp(props, "redis.host", envOrDefault("REDIS_HOST", DEFAULT_REDIS_HOST));
+        int port = parseInt(readProp(props, "redis.port", String.valueOf(intEnvOrDefault("REDIS_PORT", DEFAULT_REDIS_PORT))), DEFAULT_REDIS_PORT);
+        String password = readProp(props, "redis.password", envOrDefault("REDIS_PASSWORD", DEFAULT_REDIS_PASSWORD));
+
+        props.setProperty("redis.host", host);
+        props.setProperty("redis.port", String.valueOf(port));
+        props.setProperty("redis.password", password);
+        if (!Files.exists(configPath)) {
+            try (OutputStream out = Files.newOutputStream(configPath)) {
+                props.store(out, "NeonRouter Redis configuration");
+            }
+            logger.info("Created NeonRouter config file at {}", configPath);
+        }
+        return new RedisConfig(host, port, password);
+    }
+
+    private static String readProp(Properties props, String key, String fallback) {
+        String val = props.getProperty(key);
+        if (val == null || val.isBlank()) {
+            return fallback;
+        }
+        return val.trim();
+    }
+
+    private static int parseInt(String value, int fallback) {
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private static final class RedisConfig {
+        private final String host;
+        private final int port;
+        private final String password;
+
+        private RedisConfig(String host, int port, String password) {
+            this.host = host;
+            this.port = port;
+            this.password = password;
         }
     }
 
