@@ -2,6 +2,7 @@ package dev.neon.router;
 
 import com.google.inject.Inject;
 import com.velocitypowered.api.event.Subscribe;
+import com.velocitypowered.api.event.command.CommandExecuteEvent;
 import com.velocitypowered.api.event.player.PlayerChooseInitialServerEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.plugin.Plugin;
@@ -11,6 +12,8 @@ import com.velocitypowered.api.proxy.server.RegisteredServer;
 import org.slf4j.Logger;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -42,6 +45,8 @@ public class NeonRouterPlugin {
     @Subscribe
     public void onProxyInitialization(ProxyInitializeEvent event) {
         try {
+            // Forcefully unregister the built-in /server command completely
+            server.getCommandManager().unregister("server");
             RedisConfig redis = loadRedisConfig();
             if (redis.password.isBlank()) {
                 redisPool = new JedisPool(redis.host, redis.port);
@@ -178,6 +183,19 @@ public class NeonRouterPlugin {
                 event.setInitialServer(targetServer.get());
             } else {
                 logger.warn("Could not find mapped server for name: " + targetServerName);
+            }
+        }
+    }
+
+    @Subscribe
+    public void onCommandExecute(CommandExecuteEvent event) {
+        String[] args = event.getCommand().split(" ");
+        if (args.length > 0 && args[0].equalsIgnoreCase("server")) {
+            if (event.getCommandSource() instanceof com.velocitypowered.api.proxy.Player player) {
+                if (!player.hasPermission("neonrouter.admin")) {
+                    event.setResult(CommandExecuteEvent.CommandResult.denied());
+                    player.sendMessage(Component.text("Unknown command. Type \"/help\" for help.", NamedTextColor.RED));
+                }
             }
         }
     }
