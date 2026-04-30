@@ -147,11 +147,12 @@ public class NeonRouterPlugin {
         try (Jedis jedis = redisPool.getResource()) {
             String lastServer = jedis.get("last_server:" + uuid);
 
-            if (lastServer != null && !lastServer.equalsIgnoreCase("spawn")) {
+            // Always route to last_server if it exists, even if it's "spawn"
+            if (lastServer != null && !lastServer.isBlank()) {
                 targetServerName = lastServer;
                 logger.info("Routing " + event.getPlayer().getUsername() + " to last_server: " + targetServerName);
             } else {
-                // If no last server, or last server was spawn, send to global spawn
+                // If no last server saved, send to global spawn (first-time join)
                 String globalSpawn = jedis.get("global_spawn");
                 if (globalSpawn != null) {
                     if (globalSpawn.contains("|")) {
