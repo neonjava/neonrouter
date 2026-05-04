@@ -20,7 +20,7 @@
     <repositories>
         <repository>
             <id>papermc-repo</id>
-            <url>https://repo.papermc.io/repository/maven-public/</url>
+            <url>https://repo.papermc.io/repository/maven-public/</url> 
         </repository>
     </repositories>
 
